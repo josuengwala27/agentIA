@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 .next/
 __pycache__/
 *.pyc
@@ -10,4 +10,6 @@ venv/
 dist/
 .DS_Store
 *.log
-frontend/.git/
+.env.local
+frontend/.env.local
+

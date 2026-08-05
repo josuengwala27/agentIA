@@ -1,0 +1,99 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+:root {
+  --bg: #e8f0ec;
+  --panel: #f7fbf8;
+  --ink: #143028;
+  --muted: #5a7368;
+  --line: #c5d6cd;
+  --accent: #0f6b5c;
+  --accent-soft: #d7ebe4;
+  --warn: #b45309;
+  --danger: #b42318;
+  --glow: radial-gradient(ellipse 80% 50% at 10% 0%, #b8ddd0 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 10%, #dce8c8 0%, transparent 50%),
+    linear-gradient(165deg, #e8f0ec 0%, #dfe9e3 45%, #eef4f0 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  color: var(--ink);
+  font-family: "Source Sans 3", sans-serif;
+  background: var(--glow);
+  background-attachment: fixed;
+}
+
+.font-display {
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.surface {
+  background: color-mix(in srgb, var(--panel) 92%, white);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.65rem 1.1rem;
+  font-weight: 600;
+  background: var(--accent);
+  color: white;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.btn:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  transform: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--line);
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 0.45s ease both;
+}
