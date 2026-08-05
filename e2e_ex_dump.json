@@ -1,0 +1,49 @@
+﻿{
+    "id":  "0d814ea4-bccb-42b0-a704-a2d16236ef61",
+    "title":  "QCM prevention E2E",
+    "exercise_type":  "qcm",
+    "topic":  "prevention",
+    "payload":  {
+                    "questions":  [
+                                      {
+                                          "id":  "q1",
+                                          "stem":  "Quel est le premier principe de la sÃ©curitÃ© au travail ?",
+                                          "choices":  [
+                                                          "L\u0027evaluation des risques",
+                                                          "Le port des EPI adaptes",
+                                                          "La prÃ©vention primaire",
+                                                          "Le respect des procedures de consignation"
+                                                      ],
+                                          "explanation":  "La prÃ©vention primaire est le premier principe de la sÃ©curitÃ© au travail, qui consiste Ã  Ã©liminer les risques Ã  leur source avant d\u0027envisager des protections individuelles.",
+                                          "correct_index":  2
+                                      },
+                                      {
+                                          "id":  "q2",
+                                          "stem":  "Qu\u0027est-ce que l\u0027on doit faire en cas d\u0027incident sur le lieu de travail ?",
+                                          "choices":  [
+                                                          "Securiser la zone, alerter selon le plan d\u0027Ã©vacuation et dÃ©placer la victime",
+                                                          "Securiser d\u0027abord la zone, signaler l\u0027incident et attendre les instructions",
+                                                          "Alerter les collÃ¨gues et ne pas bouger",
+                                                          "DÃ©placer la victime sans vÃ©rifier la situation"
+                                                      ],
+                                          "explanation":  "En cas d\u0027incident sur le lieu de travail, il faut securiser d\u0027abord la zone, signaler l\u0027incident selon le plan d\u0027Ã©vacuation et ne dÃ©placer la victime que si un danger immÃ©diat l\u0027exige.",
+                                          "correct_index":  0
+                                      },
+                                      {
+                                          "id":  "q3",
+                                          "stem":  "Quel est l\u0027avantage des exercices d\u0027Ã©vacuation et des briefings rÃ©guliers ?",
+                                          "choices":  [
+                                                          "Ils permettent de rÃ©pÃ©ter les procÃ©dures",
+                                                          "Ils aident Ã  Ã©liminer les risques",
+                                                          "Ils transforment la thÃ©orie en rÃ©flexes",
+                                                          "Ils sont utiles pour les collÃ¨gues qui ne travaillent pas sur le lieu de travail"
+                                                      ],
+                                          "explanation":  "Les exercices d\u0027Ã©vacuation et les briefings rÃ©guliers aident Ã  transformer la thÃ©orie en rÃ©flexes, ce qui amÃ©liore la sÃ©curitÃ© au travail.",
+                                          "correct_index":  2
+                                      }
+                                  ]
+                },
+    "time_limit_seconds":  null,
+    "document_id":  "c317e56f-e818-4df4-999c-f851389006a5",
+    "created_at":  "2026-08-04T17:51:32.768645Z"
+}

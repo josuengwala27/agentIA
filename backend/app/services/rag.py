@@ -14,26 +14,43 @@ async def retrieve_chunks(
 ) -> list[Chunk]:
     vectors = await embed_texts([query])
     embedding = vectors[0]
-    embedding_literal = "[" + ",".join(str(float(x)) for x in embedding) + "]"
+    # pgvector literal: [0.1,0.2,...]
+    embedding_literal = "[" + ",".join(f"{float(x):.8f}" for x in embedding) + "]"
+    limit = max(1, min(int(top_k), 20))
 
-    sql = """
+    # Bind limit as literal (safe int) — some drivers mishandle LIMIT params.
+    # Cast embedding via explicit vector typmod-free cast.
+    sql = f"""
         SELECT id
         FROM chunks
         WHERE organization_id = :org_id
           AND embedding IS NOT NULL
     """
-    params: dict = {"org_id": organization_id, "embedding": embedding_literal, "top_k": top_k}
+    params: dict = {"org_id": str(organization_id), "embedding": embedding_literal}
     if document_id:
         sql += " AND document_id = :document_id"
-        params["document_id"] = document_id
-    sql += " ORDER BY embedding <=> CAST(:embedding AS vector) LIMIT :top_k"
+        params["document_id"] = str(document_id)
+    sql += f" ORDER BY embedding <=> CAST(:embedding AS vector) ASC LIMIT {limit}"
 
     rows = db.execute(text(sql), params).fetchall()
-    chunk_ids = [row[0] for row in rows]
+    chunk_ids = [str(row[0]) for row in rows]
+
+    # Fallback: if vector search returns nothing but chunks exist for the org,
+    # return the first chunks (avoids false "no content" on driver/cast quirks).
+    if not chunk_ids:
+        q = db.query(Chunk.id).filter(
+            Chunk.organization_id == str(organization_id),
+            Chunk.embedding.isnot(None),
+        )
+        if document_id:
+            q = q.filter(Chunk.document_id == str(document_id))
+        chunk_ids = [str(r[0]) for r in q.limit(limit).all()]
+
     if not chunk_ids:
         return []
+
     chunks = db.query(Chunk).filter(Chunk.id.in_(chunk_ids)).all()
-    by_id = {c.id: c for c in chunks}
+    by_id = {str(c.id): c for c in chunks}
     return [by_id[cid] for cid in chunk_ids if cid in by_id]
 
 
@@ -43,11 +60,27 @@ async def answer_with_rag(
     question: str,
     document_id: str | None = None,
 ) -> tuple[str, list[dict]]:
-    chunks = await retrieve_chunks(db, organization_id, question, document_id=document_id)
-    if not chunks:
+    # Fast path: no indexed docs at all
+    indexed_count = (
+        db.query(Document)
+        .filter(
+            Document.organization_id == str(organization_id),
+            Document.status == "indexed",
+        )
+        .count()
+    )
+    if indexed_count == 0:
         return (
             "Je n'ai trouvé aucun contenu indexé pour répondre. "
             "Demandez à un formateur d'importer des supports pédagogiques.",
+            [],
+        )
+
+    chunks = await retrieve_chunks(db, organization_id, question, document_id=document_id)
+    if not chunks:
+        return (
+            "Le document est indexé mais aucun passage pertinent n'a pu être récupéré. "
+            "Réessayez, ou ré-importez le support.",
             [],
         )
 

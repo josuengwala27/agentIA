@@ -93,6 +93,8 @@ def delete_document(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.ADMIN, UserRole.TRAINER)),
 ):
+    from app.models import Exercise
+
     doc = (
         db.query(Document)
         .filter(Document.id == document_id, Document.organization_id == user.organization_id)
@@ -100,6 +102,13 @@ def delete_document(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
+
+    # Detach exercises that reference this document (keep history / attempts).
+    db.query(Exercise).filter(
+        Exercise.document_id == document_id,
+        Exercise.organization_id == user.organization_id,
+    ).update({"document_id": None})
+
     path = Path(doc.file_path)
     if path.exists():
         path.unlink(missing_ok=True)

@@ -54,6 +54,9 @@ npm run dev
 - Dashboards apprenant / formateur + export CSV
 - Module langues : grammaire, compréhension écrite, prononciation (Whisper optionnel via `pip install faster-whisper`)
 
+## Parcours de test (ordre strict)
+Voir **[PARCOURS_TEST.md](./PARCOURS_TEST.md)** — checklist A→Z pour formateur, apprenant et admin, conçue pour éviter l'erreur « aucun contenu indexé ».
+
 ## Architecture
 Next.js ↔ FastAPI ↔ PostgreSQL/pgvector ↔ Ollama (hôte)
 
