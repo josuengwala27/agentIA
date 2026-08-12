@@ -57,6 +57,26 @@ npm run dev
 ## Parcours de test (ordre strict)
 Voir **[PARCOURS_TEST.md](./PARCOURS_TEST.md)** — checklist A→Z pour formateur, apprenant et admin, conçue pour éviter l'erreur « aucun contenu indexé ».
 
+## Tests
+
+### Lancer les tests unitaires FastAPI (sans Postgres)
+
+Le backend supporte `SKIP_DB_INIT=1` pour permettre de tester les endpoints sans dépendre de la base.
+
+```bash
+cd backend
+.\\.venv\\Scripts\\activate
+pytest -q
+```
+
+Les tests actuels couvrent au minimum :
+- `GET /api/health`
+- `GET /` (endpoint root)
+
+### Lancer les tests E2E
+
+Utilise le script `formia_e2e.ps1` (présent dans le dépôt) si tu veux rejouer un parcours complet de validation.
+
 ## Architecture
 Next.js ↔ FastAPI ↔ PostgreSQL/pgvector ↔ Ollama (hôte)
 

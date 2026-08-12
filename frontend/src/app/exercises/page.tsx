@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api, AttemptItem, DocumentItem, ExerciseItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/components/ToastProvider";
 
 type Question = {
   id: string;
@@ -16,6 +17,7 @@ type Question = {
 
 export default function ExercisesPage() {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const [exercises, setExercises] = useState<ExerciseItem[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selected, setSelected] = useState<ExerciseItem | null>(null);
@@ -67,8 +69,16 @@ export default function ExercisesPage() {
         time_limit_seconds: genType === "exam" ? 1800 : undefined,
       });
       await load();
+      addToast({
+        type: "success",
+        title: "Exercice généré",
+        message: "L’exercice est prêt. Sélectionne-le dans la liste et soumets tes réponses.",
+        ttlMs: 5000,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Génération échouée");
+      const msg = err instanceof Error ? err.message : "Génération échouée";
+      setError(msg);
+      addToast({ type: "error", title: "Génération échouée", message: msg, ttlMs: 5500 });
     } finally {
       setBusy(false);
     }
@@ -82,8 +92,16 @@ export default function ExercisesPage() {
       const attempt = await api.submitAttempt(selected.id, answers);
       setResult(attempt);
       await load();
+      addToast({
+        type: "success",
+        title: "Correction effectuée",
+        message: `Score : ${attempt.score ?? 0}/${attempt.max_score ?? 0}`,
+        ttlMs: 4500,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Soumission échouée");
+      const msg = err instanceof Error ? err.message : "Soumission échouée";
+      setError(msg);
+      addToast({ type: "error", title: "Soumission échouée", message: msg, ttlMs: 5500 });
     } finally {
       setBusy(false);
     }

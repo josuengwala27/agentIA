@@ -4,6 +4,8 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, Citation, ConversationItem, DocumentItem, MessageItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { useToast } from "@/components/ToastProvider";
 
 export default function ChatPage() {
   const { user } = useAuth();
@@ -19,6 +21,8 @@ export default function ChatPage() {
   const [status, setStatus] = useState("");
   const activeIdRef = useRef<string | undefined>(undefined);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const confirm = useConfirm();
+  const { addToast } = useToast();
 
   useEffect(() => {
     activeIdRef.current = activeId;
@@ -89,7 +93,14 @@ export default function ChatPage() {
   }
 
   async function clearHistory() {
-    if (!confirm("Supprimer tout l’historique des conversations ?")) return;
+    const ok = await confirm({
+      title: "Effacer l’historique ?",
+      description: "Toutes tes conversations et messages seront supprimés.",
+      danger: true,
+      confirmText: "Effacer",
+      cancelText: "Annuler",
+    });
+    if (!ok) return;
     setError("");
     try {
       await api.deleteAllConversations();
@@ -97,8 +108,11 @@ export default function ChatPage() {
       setActiveId(undefined);
       setMessages([]);
       setStatus("Historique effacé.");
+      addToast({ type: "success", title: "OK", message: "Historique supprimé.", ttlMs: 3500 });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Suppression impossible");
+      const msg = err instanceof Error ? err.message : "Suppression impossible";
+      setError(msg);
+      addToast({ type: "error", title: "Erreur", message: msg, ttlMs: 5500 });
     }
   }
 
@@ -143,7 +157,9 @@ export default function ChatPage() {
       await refreshConversations();
       setStatus("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur chat");
+      const msg = err instanceof Error ? err.message : "Erreur chat";
+      setError(msg);
+      addToast({ type: "error", title: "Chat impossible", message: msg, ttlMs: 6000 });
       setStatus("");
       const id = activeIdRef.current;
       if (id) {
@@ -250,6 +266,14 @@ export default function ChatPage() {
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto mb-4">
+          {messages.length === 0 && (
+            <div className="surface p-6 text-sm text-[var(--muted)]">
+              <div className="font-medium text-[var(--ink)]">Commence par une question</div>
+              <div className="mt-2">
+                Pose une question sur le support <strong>{documents[0]?.title || "indexé"}</strong> afin que le tuteur puisse répondre avec des citations.
+              </div>
+            </div>
+          )}
           {messages.map((m) => (
             <div key={m.id} className={`max-w-3xl ${m.role === "user" ? "ml-auto text-right" : ""}`}>
               <div

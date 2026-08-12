@@ -2,9 +2,11 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { api, DocumentItem } from "@/lib/api";
+import { useToast } from "@/components/ToastProvider";
 
 export default function LanguagesPage() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const { addToast } = useToast();
   const [text, setText] = useState("Je suis aller au centre de formation hier.");
   const [grammar, setGrammar] = useState<{ corrected_text: string; explanations: string[] } | null>(
     null
@@ -34,8 +36,20 @@ export default function LanguagesPage() {
     setError("");
     try {
       setGrammar(await api.grammar(text));
+      addToast({
+        type: "success",
+        title: "Correction terminée",
+        message: "Ta phrase a été corrigée.",
+        ttlMs: 4200,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
+      addToast({
+        type: "error",
+        title: "Erreur correction",
+        message: err instanceof Error ? err.message : "Erreur",
+        ttlMs: 5500,
+      });
     } finally {
       setBusy("");
     }
@@ -46,9 +60,28 @@ export default function LanguagesPage() {
     setBusy("comp");
     setError("");
     try {
+      if (!docId) {
+        const msg = "Choisis un document indexé.";
+        setError(msg);
+        addToast({ type: "warning", title: "Document requis", message: msg, ttlMs: 4500 });
+        setBusy("");
+        return;
+      }
       setComprehension(await api.comprehension(docId, 3));
+      addToast({
+        type: "success",
+        title: "Exercice généré",
+        message: "Compréhension écrite générée à partir du document.",
+        ttlMs: 4500,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
+      addToast({
+        type: "error",
+        title: "Erreur compréhension",
+        message: err instanceof Error ? err.message : "Erreur",
+        ttlMs: 5500,
+      });
     } finally {
       setBusy("");
     }
@@ -60,8 +93,20 @@ export default function LanguagesPage() {
     setError("");
     try {
       setPronunciation(await api.pronunciation(reference, audio || undefined));
+      addToast({
+        type: "success",
+        title: "Analyse terminée",
+        message: "Résultat de prononciation / fluidité prêt.",
+        ttlMs: 4200,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
+      addToast({
+        type: "error",
+        title: "Erreur analyse",
+        message: err instanceof Error ? err.message : "Erreur",
+        ttlMs: 5500,
+      });
     } finally {
       setBusy("");
     }

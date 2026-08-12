@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, DocumentItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { useToast } from "@/components/ToastProvider";
 
 export default function DocumentsPage() {
   const { user } = useAuth();
@@ -11,6 +13,8 @@ export default function DocumentsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const confirm = useConfirm();
+  const { addToast } = useToast();
 
   async function load() {
     setDocs(await api.documents());
@@ -30,8 +34,16 @@ export default function DocumentsPage() {
       setTitle("");
       setFile(null);
       await load();
+      addToast({
+        type: "success",
+        title: "Support importé",
+        message: "L’indexation a été lancée. Vérifie le statut du document dans la liste.",
+        ttlMs: 4500,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Échec upload");
+      const msg = err instanceof Error ? err.message : "Échec upload";
+      setError(msg);
+      addToast({ type: "error", title: "Import échoué", message: msg, ttlMs: 5500 });
     } finally {
       setBusy(false);
     }
@@ -111,16 +123,29 @@ export default function DocumentsPage() {
               className="btn btn-ghost"
               disabled={busy}
               onClick={async () => {
-                if (!confirm(`Supprimer « ${d.title} » ? Les exercices liés seront conservés sans ce document.`)) {
-                  return;
-                }
+                const ok = await confirm({
+                  title: "Supprimer le support ?",
+                  description: `Les exercices liés seront conservés sans ce document.\n\nSupport : ${d.title}`,
+                  danger: true,
+                  confirmText: "Supprimer",
+                  cancelText: "Annuler",
+                });
+                if (!ok) return;
                 setBusy(true);
                 setError("");
                 try {
                   await api.deleteDocument(d.id);
                   await load();
+                  addToast({
+                    type: "success",
+                    title: "Support supprimé",
+                    message: "Le support a été supprimé de l’organisation.",
+                    ttlMs: 4200,
+                  });
                 } catch (err) {
-                  setError(err instanceof Error ? err.message : "Suppression impossible");
+                  const msg = err instanceof Error ? err.message : "Suppression impossible";
+                  setError(msg);
+                  addToast({ type: "error", title: "Suppression échouée", message: msg, ttlMs: 5500 });
                 } finally {
                   setBusy(false);
                 }

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
     algorithm: str = "HS256"
+    skip_db_init: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -14,15 +14,27 @@ export default function DashboardPage() {
     if (!user) return;
     (async () => {
       try {
-        setLearner(await api.learnerStats());
-        if (user.role === "trainer" || user.role === "admin") {
-          setTrainer(await api.trainerStats());
+        if (user.role === "learner") {
+          setLearner(await api.learnerStats());
+          setTrainer(null);
+          return;
         }
+        setTrainer(await api.trainerStats());
+        setLearner(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erreur dashboard");
       }
     })();
   }, [user]);
+
+  const role = user?.role;
+  const headerTitle = role === "learner" ? "Progression" : role === "admin" ? "Supervision" : "Pilotage";
+  const headerSubtitle =
+    role === "learner"
+      ? "Ton entraînement, tes scores et tes points faibles."
+      : role === "admin"
+        ? "Vue globale sur l’usage et les difficultés récurrentes."
+        : "Suivi du groupe, supports prêts et reporting.";
 
   async function downloadCsv() {
     const token = localStorage.getItem("access_token");
@@ -41,8 +53,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8 rise">
       <header>
-        <h1 className="font-display text-4xl">Tableau de bord</h1>
-        <p className="text-[var(--muted)] mt-2">Progression, difficultés et activité récente.</p>
+        <h1 className="font-display text-4xl">{headerTitle}</h1>
+        <p className="text-[var(--muted)] mt-2">{headerSubtitle}</p>
       </header>
       {error && <p className="text-[var(--danger)]">{error}</p>}
 
