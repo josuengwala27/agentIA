@@ -54,8 +54,10 @@ npm run dev
 - Dashboards apprenant / formateur + export CSV
 - Module langues : grammaire, compréhension écrite, prononciation (Whisper optionnel via `pip install faster-whisper`)
 
-## Parcours de test (ordre strict)
-Voir **[PARCOURS_TEST.md](./PARCOURS_TEST.md)** — checklist A→Z pour formateur, apprenant et admin, conçue pour éviter l'erreur « aucun contenu indexé ».
+## Guide complet (Git → lancement → tests A→Z)
+Voir **[GUIDE_COMPLET_INSTALLATION_ET_TESTS.md](./GUIDE_COMPLET_INSTALLATION_ET_TESTS.md)** — récupération depuis Git, installation, démarrage de tous les services, puis parcours de test détaillé formateur / apprenant / admin avec résultats attendus (toasts, modales, menus par rôle, RAG, exercices, langues).
+
+Pour un démarrage « nouvel ordinateur » plus court : **[GUIDE_NOUVEL_ORDI.md](./GUIDE_NOUVEL_ORDI.md)**.
 
 ## Tests
 

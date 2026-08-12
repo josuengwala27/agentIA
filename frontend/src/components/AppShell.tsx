@@ -16,24 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [loading, user, pathname, router]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen grid place-items-center text-[var(--muted)]">
-        Chargement…
-      </div>
-    );
-  }
-
-  if (!user && pathname !== "/login") {
-    return (
-      <div className="min-h-screen grid place-items-center text-[var(--muted)]">
-        Redirection…
-      </div>
-    );
-  }
-
-  if (pathname === "/login") return <>{children}</>;
-
+  // Tous les hooks doivent être appelés avant tout return conditionnel
   const navLinks = useMemo(() => {
     const role = user?.role;
     if (role === "learner") {
@@ -62,6 +45,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       { href: "/languages", label: "Langues" },
     ];
   }, [user?.role]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen grid place-items-center text-[var(--muted)]">
+        Chargement…
+      </div>
+    );
+  }
+
+  if (!user && pathname !== "/login") {
+    return (
+      <div className="min-h-screen grid place-items-center text-[var(--muted)]">
+        Redirection…
+      </div>
+    );
+  }
+
+  if (pathname === "/login") return <>{children}</>;
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
