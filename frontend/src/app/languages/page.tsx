@@ -1,8 +1,34 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { api, DocumentItem } from "@/lib/api";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  api,
+  ComprehensionExercise,
+  DocumentItem,
+  PronunciationResult,
+} from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
+
+const SPEECH_LANG: Record<string, string> = {
+  fr: "fr-FR",
+  en: "en-US",
+  es: "es-ES",
+  de: "de-DE",
+  it: "it-IT",
+  pt: "pt-PT",
+  ar: "ar-SA",
+  zh: "zh-CN",
+  ru: "ru-RU",
+};
+
+function speak(text: string, language = "fr") {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = SPEECH_LANG[language] || "fr-FR";
+  utterance.rate = 0.9;
+  window.speechSynthesis.speak(utterance);
+}
 
 export default function LanguagesPage() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -12,20 +38,27 @@ export default function LanguagesPage() {
     null
   );
   const [docId, setDocId] = useState("");
-  const [comprehension, setComprehension] = useState<Record<string, unknown> | null>(null);
-  const [reference, setReference] = useState("Bonjour, je m'appelle Marie et j'apprends le français.");
+  const [comprehension, setComprehension] = useState<ComprehensionExercise | null>(null);
+  const [compAnswers, setCompAnswers] = useState<Record<string, number>>({});
+  const [compChecked, setCompChecked] = useState(false);
+  const [reference, setReference] = useState("A phrasal verb is a verb plus a particle.");
+  const [spoken, setSpoken] = useState("");
   const [audio, setAudio] = useState<File | null>(null);
-  const [pronunciation, setPronunciation] = useState<Record<string, unknown> | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [whisper, setWhisper] = useState<boolean | null>(null);
+  const [pronunciation, setPronunciation] = useState<PronunciationResult | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
-    api
-      .documents()
-      .then((d) => {
-        const indexed = d.filter((x) => x.status === "indexed");
+    Promise.all([api.documents(), api.languagesStatus().catch(() => ({ whisper: false }))])
+      .then(([docs, status]) => {
+        const indexed = docs.filter((x) => x.status === "indexed");
         setDocuments(indexed);
         if (indexed[0]) setDocId(indexed[0].id);
+        setWhisper(status.whisper);
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -43,13 +76,9 @@ export default function LanguagesPage() {
         ttlMs: 4200,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur");
-      addToast({
-        type: "error",
-        title: "Erreur correction",
-        message: err instanceof Error ? err.message : "Erreur",
-        ttlMs: 5500,
-      });
+      const msg = err instanceof Error ? err.message : "Erreur";
+      setError(msg);
+      addToast({ type: "error", title: "Erreur correction", message: msg, ttlMs: 5500 });
     } finally {
       setBusy("");
     }
@@ -67,7 +96,10 @@ export default function LanguagesPage() {
         setBusy("");
         return;
       }
-      setComprehension(await api.comprehension(docId, 3));
+      const exercise = await api.comprehension(docId, 3);
+      setComprehension(exercise);
+      setCompAnswers({});
+      setCompChecked(false);
       addToast({
         type: "success",
         title: "Exercice généré",
@@ -75,16 +107,45 @@ export default function LanguagesPage() {
         ttlMs: 4500,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur");
-      addToast({
-        type: "error",
-        title: "Erreur compréhension",
-        message: err instanceof Error ? err.message : "Erreur",
-        ttlMs: 5500,
-      });
+      const msg = err instanceof Error ? err.message : "Erreur";
+      setError(msg);
+      addToast({ type: "error", title: "Erreur compréhension", message: msg, ttlMs: 5500 });
     } finally {
       setBusy("");
     }
+  }
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const file = new File([blob], "shadowing.webm", { type: blob.type });
+        setAudio(file);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setRecording(true);
+    } catch {
+      addToast({
+        type: "error",
+        title: "Micro inaccessible",
+        message: "Autorise le micro ou importe un fichier audio.",
+        ttlMs: 5000,
+      });
+    }
+  }
+
+  function stopRecording() {
+    recorderRef.current?.stop();
+    recorderRef.current = null;
+    setRecording(false);
   }
 
   async function onPronunciation(e: FormEvent) {
@@ -92,40 +153,44 @@ export default function LanguagesPage() {
     setBusy("pron");
     setError("");
     try {
-      setPronunciation(await api.pronunciation(reference, audio || undefined));
+      const result = await api.pronunciation(reference, audio || undefined, spoken.trim() || undefined);
+      setPronunciation(result);
       addToast({
         type: "success",
         title: "Analyse terminée",
-        message: "Résultat de prononciation / fluidité prêt.",
+        message: `Précision ${(result.accuracy * 100).toFixed(0)} % — ${result.engine === "manual" ? "transcription saisie" : result.engine}.`,
         ttlMs: 4200,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur");
-      addToast({
-        type: "error",
-        title: "Erreur analyse",
-        message: err instanceof Error ? err.message : "Erreur",
-        ttlMs: 5500,
-      });
+      const msg = err instanceof Error ? err.message : "Erreur";
+      setError(msg);
+      addToast({ type: "error", title: "Erreur analyse", message: msg, ttlMs: 5500 });
     } finally {
       setBusy("");
     }
   }
+
+  const wordClass: Record<string, string> = {
+    match: "bg-emerald-100 text-emerald-900",
+    missed: "bg-red-100 text-red-800 line-through",
+    replaced: "bg-amber-100 text-amber-900",
+    extra: "bg-slate-200 text-slate-700 italic",
+  };
 
   return (
     <div className="space-y-8 rise max-w-4xl">
       <header>
         <h1 className="font-display text-4xl">Module langues</h1>
         <p className="text-[var(--muted)] mt-2">
-          Correction écrite, compréhension, et analyse de prononciation (Whisper local optionnel).
+          Correction écrite, compréhension, shadowing et analyse de prononciation.
         </p>
       </header>
       {error && <p className="text-[var(--danger)]">{error}</p>}
 
       {documents.length === 0 && (
         <div className="rounded-xl border border-[var(--warn)] bg-[#fff7ed] px-4 py-3 text-sm">
-          La compréhension écrite nécessite un support <strong>indexed</strong>. La grammaire et la
-          prononciation (texte) peuvent être testées sans document.
+          La compréhension écrite nécessite un support <strong>indexed</strong>. La grammaire et le
+          shadowing peuvent être testés sans document.
         </div>
       )}
 
@@ -160,14 +225,56 @@ export default function LanguagesPage() {
           {busy === "comp" ? "Génération…" : "Générer un exercice"}
         </button>
         {comprehension && (
-          <pre className="text-xs whitespace-pre-wrap bg-white/70 p-4 rounded-xl overflow-auto">
-            {JSON.stringify(comprehension, null, 2)}
-          </pre>
+          <div className="space-y-4">
+            <p className="bg-white/70 rounded-xl p-4 text-sm whitespace-pre-wrap">{comprehension.passage}</p>
+            {(comprehension.questions || []).map((q) => (
+              <div key={q.id} className="space-y-2 border-t border-[var(--line)] pt-3">
+                <p className="font-medium">{q.stem}</p>
+                {(q.choices || []).map((choice, idx) => {
+                  const selected = compAnswers[q.id] === idx;
+                  const correct = compChecked && idx === q.correct_index;
+                  const wrong = compChecked && selected && idx !== q.correct_index;
+                  return (
+                    <label
+                      key={idx}
+                      className={`flex gap-2 items-center text-sm px-2 py-1 rounded-lg ${
+                        correct ? "bg-emerald-100" : wrong ? "bg-red-100" : ""
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={q.id}
+                        checked={selected}
+                        onChange={() => setCompAnswers((a) => ({ ...a, [q.id]: idx }))}
+                        disabled={compChecked}
+                      />
+                      {choice}
+                    </label>
+                  );
+                })}
+                {compChecked && q.explanation && (
+                  <p className="text-xs text-[var(--muted)]">{q.explanation}</p>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setCompChecked(true)}
+              disabled={compChecked}
+            >
+              Vérifier
+            </button>
+          </div>
         )}
       </form>
 
       <form onSubmit={onPronunciation} className="surface p-6 space-y-3">
-        <h2 className="font-display text-2xl">Prononciation / fluidité</h2>
+        <h2 className="font-display text-2xl">Prononciation / shadowing</h2>
+        <p className="text-sm text-[var(--muted)]">
+          Écoute le modèle, répète, puis analyse. Whisper local :{" "}
+          {whisper ? "disponible" : "non installé — utilise la transcription saisie"}.
+        </p>
         <label className="block text-sm">
           Texte de référence
           <textarea
@@ -176,22 +283,76 @@ export default function LanguagesPage() {
             onChange={(e) => setReference(e.target.value)}
           />
         </label>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => speak(reference, pronunciation?.language || "en")}
+          >
+            Écouter le modèle
+          </button>
+          {!recording ? (
+            <button type="button" className="btn btn-ghost" onClick={startRecording}>
+              Enregistrer
+            </button>
+          ) : (
+            <button type="button" className="btn" onClick={stopRecording}>
+              Stop
+            </button>
+          )}
+        </div>
         <label className="block text-sm">
-          Audio (optionnel, nécessite faster-whisper)
+          Audio (fichier ou enregistrement)
           <input
             type="file"
             accept="audio/*"
             className="mt-1 block"
             onChange={(e) => setAudio(e.target.files?.[0] || null)}
           />
+          {audio && <span className="text-xs text-[var(--muted)]">{audio.name}</span>}
+        </label>
+        <label className="block text-sm">
+          Transcription de ce que tu as lu (si pas de Whisper)
+          <textarea
+            className="input mt-1 min-h-16"
+            value={spoken}
+            onChange={(e) => setSpoken(e.target.value)}
+            placeholder="Ex. A phrasal verb is a verb plus a particule."
+          />
         </label>
         <button className="btn" disabled={busy === "pron"} type="submit">
           {busy === "pron" ? "Analyse…" : "Analyser"}
         </button>
         {pronunciation && (
-          <pre className="text-xs whitespace-pre-wrap bg-white/70 p-4 rounded-xl overflow-auto">
-            {JSON.stringify(pronunciation, null, 2)}
-          </pre>
+          <div className="space-y-3 bg-white/70 rounded-xl p-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <p>
+                Précision : <strong>{Math.round(pronunciation.accuracy * 100)}%</strong>
+              </p>
+              <p>
+                Fluidité : <strong>{Math.round(pronunciation.fluency * 100)}%</strong>
+              </p>
+            </div>
+            <p className="text-sm">{pronunciation.feedback}</p>
+            <div className="flex flex-wrap gap-1">
+              {pronunciation.words.map((item, idx) => (
+                <span key={`${item.word}-${idx}`} className={`px-2 py-0.5 rounded-md text-sm ${wordClass[item.status] || ""}`}>
+                  {item.word}
+                </span>
+              ))}
+            </div>
+            <p className="text-sm">{pronunciation.shadowing_tip}</p>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => speak(pronunciation.shadowing_text, pronunciation.language)}
+            >
+              Écouter les mots à retravailler
+            </button>
+            <p className="text-xs text-[var(--muted)]">
+              Moteur : {pronunciation.engine} — transcrit : {pronunciation.transcript}
+            </p>
+          </div>
         )}
       </form>
     </div>

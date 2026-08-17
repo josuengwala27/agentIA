@@ -30,6 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (role === "admin") {
       return [
         { href: "/dashboard", label: "Supervision" },
+        { href: "/users", label: "Comptes" },
         { href: "/documents", label: "Gestion supports" },
         { href: "/chat", label: "Assistance pédagogique" },
         { href: "/exercises", label: "Exercices" },

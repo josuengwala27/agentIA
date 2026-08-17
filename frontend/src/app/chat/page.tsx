@@ -19,8 +19,9 @@ export default function ChatPage() {
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState("");
+  const [streaming, setStreaming] = useState(false);
   const activeIdRef = useRef<string | undefined>(undefined);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
   const confirm = useConfirm();
   const { addToast } = useToast();
 
@@ -52,35 +53,9 @@ export default function ChatPage() {
       .finally(() => setReady(true));
   }, []);
 
-  // While waiting for Ollama, poll the server so a page remount / slow UI still shows the answer.
   useEffect(() => {
-    if (!busy) {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-      return;
-    }
-    pollRef.current = setInterval(async () => {
-      const id = activeIdRef.current;
-      if (!id) return;
-      try {
-        const msgs = await api.messages(id);
-        setMessages(msgs);
-        const last = msgs[msgs.length - 1];
-        if (last?.role === "assistant") {
-          setBusy(false);
-          setStatus("");
-          await refreshConversations();
-        }
-      } catch {
-        /* ignore transient poll errors */
-      }
-    }, 2500);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [busy, refreshConversations]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, status]);
 
   const hasIndexed = documents.length > 0;
   const canChat = hasIndexed && !busy;
@@ -122,10 +97,11 @@ export default function ChatPage() {
     const userMsg = input.trim();
     setInput("");
     setBusy(true);
+    setStreaming(true);
     setError("");
-    setStatus("Génération en cours (Ollama local : 20 à 90 s). Ne rechargez pas la page…");
+    setStatus("Recherche dans les supports…");
 
-    // Optimistic user bubble
+    const streamId = `stream-${Date.now()}`;
     setMessages((m) => [
       ...m,
       {
@@ -134,25 +110,53 @@ export default function ChatPage() {
         content: userMsg,
         created_at: new Date().toISOString(),
       },
+      {
+        id: streamId,
+        role: "assistant",
+        content: "",
+        created_at: new Date().toISOString(),
+      },
     ]);
 
     try {
-      const res = await api.chat(userMsg, activeId, documentId || undefined);
-      setActiveId(res.conversation_id);
-      activeIdRef.current = res.conversation_id;
-      // Source of truth = server (fixes “answer only after refresh”)
-      const msgs = await loadMessages(res.conversation_id);
-      if (!msgs.some((m) => m.role === "assistant" && m.content === res.answer)) {
-        setMessages((m) => [
-          ...m,
-          {
-            id: `assistant-${Date.now()}`,
-            role: "assistant",
-            content: res.answer,
-            citations: res.citations,
-            created_at: new Date().toISOString(),
-          },
-        ]);
+      let acc = "";
+      let citations: Citation[] | undefined;
+      let convId = activeId;
+      for await (const event of api.chatStream(userMsg, activeId, documentId || undefined)) {
+        if (event.type === "meta") {
+          convId = event.conversation_id;
+          setActiveId(event.conversation_id);
+          activeIdRef.current = event.conversation_id;
+          if (event.citations) {
+            citations = event.citations;
+            setMessages((m) =>
+              m.map((msg) => (msg.id === streamId ? { ...msg, citations: event.citations } : msg))
+            );
+          }
+        } else if (event.type === "status") {
+          setStatus(event.message);
+        } else if (event.type === "token") {
+          acc += event.text;
+          setMessages((m) =>
+            m.map((msg) => (msg.id === streamId ? { ...msg, content: acc, citations } : msg))
+          );
+        } else if (event.type === "done") {
+          convId = event.conversation_id;
+          citations = event.citations || citations;
+          acc = event.answer || acc;
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.id === streamId ? { ...msg, content: acc, citations } : msg
+            )
+          );
+        } else if (event.type === "error") {
+          throw new Error(event.message);
+        }
+      }
+      if (convId) {
+        setActiveId(convId);
+        activeIdRef.current = convId;
+        await loadMessages(convId);
       }
       await refreshConversations();
       setStatus("");
@@ -171,6 +175,7 @@ export default function ChatPage() {
       }
     } finally {
       setBusy(false);
+      setStreaming(false);
     }
   }
 
@@ -246,7 +251,7 @@ export default function ChatPage() {
 
           {hasIndexed && (
             <p className="mt-2 text-xs text-[var(--accent)]">
-              {documents.length} support(s) prêt(s). La génération locale peut prendre jusqu’à 1–2 minutes.
+              {documents.length} support(s) prêt(s). La réponse s’affiche au fur et à mesure.
             </p>
           )}
 
@@ -281,16 +286,20 @@ export default function ChatPage() {
                   m.role === "user" ? "bg-[var(--accent)] text-white" : "bg-[var(--accent-soft)]"
                 }`}
               >
-                <p className="whitespace-pre-wrap">{m.content}</p>
+                <p className="whitespace-pre-wrap">
+                  {m.content}
+                  {streaming && m.id.startsWith("stream-") ? (
+                    <span className="inline-block w-2 h-4 ml-1 align-[-2px] bg-[var(--ink)] animate-pulse" />
+                  ) : null}
+                </p>
               </div>
               {m.citations && m.citations.length > 0 && <Citations citations={m.citations} />}
             </div>
           ))}
-          {busy && (
-            <div className="text-sm text-[var(--muted)] animate-pulse">
-              L’IA rédige la réponse… {status}
-            </div>
+          {busy && status && (
+            <div className="text-sm text-[var(--muted)] animate-pulse">{status}</div>
           )}
+          <div ref={bottomRef} />
         </div>
 
         {status && !busy && <p className="text-sm text-[var(--accent)] mb-2">{status}</p>}
@@ -304,7 +313,7 @@ export default function ChatPage() {
             disabled={!canChat}
           />
           <button className="btn min-w-28" disabled={!canChat || !input.trim()} type="submit">
-            {busy ? "Attente…" : "Envoyer"}
+            {busy ? "Rédaction…" : "Envoyer"}
           </button>
         </form>
       </section>

@@ -1,8 +1,16 @@
+from dataclasses import dataclass, field
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import Chunk, Document
 from app.services.ollama import chat_completion, embed_texts
+from app.services.conversation_memory import build_tutor_messages, retrieval_query
+from app.services.question_language import (
+    detect_thread_language,
+    fallback_message,
+    language_display_name,
+)
 
 
 async def retrieve_chunks(
@@ -54,13 +62,20 @@ async def retrieve_chunks(
     return [by_id[cid] for cid in chunk_ids if cid in by_id]
 
 
-async def answer_with_rag(
+@dataclass
+class RagPlan:
+    citations: list[dict] = field(default_factory=list)
+    answer: str | None = None
+    messages: list[dict[str, str]] | None = None
+
+
+async def plan_rag_answer(
     db: Session,
     organization_id: str,
     question: str,
     document_id: str | None = None,
-) -> tuple[str, list[dict]]:
-    # Fast path: no indexed docs at all
+    history: list[dict[str, str]] | None = None,
+) -> RagPlan:
     indexed_count = (
         db.query(Document)
         .filter(
@@ -70,22 +85,15 @@ async def answer_with_rag(
         .count()
     )
     if indexed_count == 0:
-        return (
-            "Je n'ai trouvé aucun contenu indexé pour répondre. "
-            "Demandez à un formateur d'importer des supports pédagogiques.",
-            [],
-        )
+        return RagPlan(answer=fallback_message("no_indexed", question, history))
 
-    chunks = await retrieve_chunks(db, organization_id, question, document_id=document_id)
+    query = retrieval_query(question, history)
+    chunks = await retrieve_chunks(db, organization_id, query, document_id=document_id)
     if not chunks:
-        return (
-            "Le document est indexé mais aucun passage pertinent n'a pu être récupéré. "
-            "Réessayez, ou ré-importez le support.",
-            [],
-        )
+        return RagPlan(answer=fallback_message("no_chunks", question, history))
 
     context_parts = []
-    citations = []
+    citations: list[dict] = []
     for idx, chunk in enumerate(chunks, start=1):
         doc = db.get(Document, chunk.document_id)
         title = doc.title if doc else "Document"
@@ -99,13 +107,36 @@ async def answer_with_rag(
             }
         )
 
+    reply_lang = language_display_name(detect_thread_language(question, history))
     system = (
-        "Tu es un tuteur pédagogique. Réponds UNIQUEMENT à partir du contexte fourni. "
-        "Si l'information manque, dis-le clairement. Cite les sources avec [n]."
+        "You are a pedagogical tutor. Answer ONLY from the provided context. "
+        "Use the conversation history to resolve follow-ups (examples, pronouns, "
+        "'explain more') without inventing facts outside the excerpts. "
+        "Always reply in the SAME language as the learner's question, "
+        "even if the source excerpts or this instruction are in another language. "
+        "If information is missing, say so clearly in that same language. "
+        "Cite sources with [n]."
     )
-    user = f"Contexte:\n{chr(10).join(context_parts)}\n\nQuestion: {question}"
-    answer = await chat_completion(
-        [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        temperature=0.2,
+    messages = build_tutor_messages(
+        system=system,
+        context=chr(10).join(context_parts),
+        question=question,
+        history=history,
+        reply_lang=reply_lang,
     )
-    return answer, citations
+    return RagPlan(citations=citations, messages=messages)
+
+
+async def answer_with_rag(
+    db: Session,
+    organization_id: str,
+    question: str,
+    document_id: str | None = None,
+    history: list[dict[str, str]] | None = None,
+) -> tuple[str, list[dict]]:
+    plan = await plan_rag_answer(db, organization_id, question, document_id, history)
+    if plan.answer is not None:
+        return plan.answer, plan.citations
+    assert plan.messages is not None
+    answer = await chat_completion(plan.messages, temperature=0.2)
+    return answer, plan.citations

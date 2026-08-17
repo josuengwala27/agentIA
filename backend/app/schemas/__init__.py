@@ -21,8 +21,36 @@ class UserOut(BaseModel):
     full_name: str
     role: str
     organization_id: str
+    is_active: bool = True
 
     model_config = {"from_attributes": True}
+
+
+class UserAdminOut(UserOut):
+    created_at: datetime
+
+
+class CreateUserRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    full_name: str = Field(min_length=1, max_length=255)
+    role: str = "learner"
+    password: str | None = Field(default=None, min_length=8)
+
+
+class UserCreatedOut(UserAdminOut):
+    temporary_password: str | None = None
+
+
+class SetActiveRequest(BaseModel):
+    is_active: bool
+
+
+class ResetPasswordRequest(BaseModel):
+    password: str | None = Field(default=None, min_length=8)
+
+
+class ResetPasswordResponse(BaseModel):
+    temporary_password: str
 
 
 class DocumentOut(BaseModel):
@@ -113,12 +141,36 @@ class AttemptOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class LearnerProgress(BaseModel):
+    user_id: str
+    full_name: str
+    email: str
+    attempts_count: int
+    average_score: float | None
+    last_attempt_at: datetime | None
+    weak_topics: list[str]
+
+
+class ScorePoint(BaseModel):
+    date: str
+    average_score: float | None
+    attempts_count: int
+
+
+class WeakTopicStat(BaseModel):
+    topic: str
+    count: int
+    exercise_id: str | None = None
+    document_id: str | None = None
+
+
 class LearnerStats(BaseModel):
     attempts_count: int
     average_score: float | None
     documents_available: int
     weak_topics: list[str]
     recent_attempts: list[AttemptOut]
+    practice_topics: list[WeakTopicStat] = []
 
 
 class TrainerStats(BaseModel):
@@ -127,13 +179,15 @@ class TrainerStats(BaseModel):
     indexed_documents: int
     attempts_count: int
     average_score: float | None
-    recurrent_weak_topics: list[dict[str, Any]]
+    recurrent_weak_topics: list[WeakTopicStat]
     score_by_exercise_type: list[dict[str, Any]]
+    learners: list[LearnerProgress] = []
+    score_over_time: list[ScorePoint] = []
 
 
 class GrammarRequest(BaseModel):
     text: str = Field(min_length=1)
-    language: str = "fr"
+    language: str = "auto"
 
 
 class GrammarResponse(BaseModel):

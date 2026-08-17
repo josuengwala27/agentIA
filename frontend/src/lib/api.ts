@@ -6,6 +6,13 @@ export type User = {
   full_name: string;
   role: string;
   organization_id: string;
+  is_active?: boolean;
+};
+
+export type AdminUser = User & {
+  is_active: boolean;
+  created_at: string;
+  temporary_password?: string | null;
 };
 
 function authHeaders(): HeadersInit {
@@ -44,6 +51,68 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return text ? (JSON.parse(text) as T) : (undefined as T);
 }
 
+export type ChatStreamEvent =
+  | { type: "meta"; conversation_id: string; citations?: Citation[] }
+  | { type: "status"; message: string }
+  | { type: "token"; text: string }
+  | { type: "done"; conversation_id: string; answer: string; citations?: Citation[] }
+  | { type: "error"; message: string };
+
+async function* streamChatEvents(
+  message: string,
+  conversationId?: string,
+  documentId?: string
+): AsyncGenerator<ChatStreamEvent> {
+  const headers = new Headers(authHeaders());
+  headers.set("Content-Type", "application/json");
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/chat/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message,
+        conversation_id: conversationId || null,
+        document_id: documentId || null,
+      }),
+    });
+  } catch {
+    throw new Error(
+      "Impossible de joindre l’API (Failed to fetch). Vérifiez que le backend tourne sur http://localhost:8000."
+    );
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = await res.json();
+      detail = data.detail || JSON.stringify(data);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  if (!res.body) {
+    throw new Error("Flux de réponse vide.");
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+    for (const part of parts) {
+      const dataLine = part.split("\n").find((line) => line.startsWith("data:"));
+      if (!dataLine) continue;
+      const raw = dataLine.replace(/^data:\s*/, "").trim();
+      if (!raw || raw === "[DONE]") continue;
+      yield JSON.parse(raw) as ChatStreamEvent;
+    }
+  }
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<{ access_token: string; refresh_token: string }>("/api/auth/login/json", {
@@ -51,6 +120,27 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<User>("/api/auth/me"),
+  users: () => request<AdminUser[]>("/api/users"),
+  createUser: (payload: {
+    email: string;
+    full_name: string;
+    role: string;
+    password?: string;
+  }) =>
+    request<AdminUser & { temporary_password?: string | null }>("/api/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  setUserActive: (id: string, is_active: boolean) =>
+    request<AdminUser>(`/api/users/${id}/active`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active }),
+    }),
+  resetUserPassword: (id: string, password?: string) =>
+    request<{ temporary_password: string }>(`/api/users/${id}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify(password ? { password } : {}),
+    }),
   documents: () => request<DocumentItem[]>("/api/documents"),
   uploadDocument: (title: string, file: File) => {
     const form = new FormData();
@@ -68,6 +158,12 @@ export const api = {
         document_id: documentId || null,
       }),
     }),
+  chatStream: (
+    message: string,
+    conversationId?: string,
+    documentId?: string
+  ) =>
+    streamChatEvents(message, conversationId, documentId),
   conversations: () => request<ConversationItem[]>("/api/chat/conversations"),
   deleteConversation: (id: string) =>
     request<void>(`/api/chat/conversations/${id}`, { method: "DELETE" }),
@@ -96,21 +192,23 @@ export const api = {
   learnerStats: () => request<LearnerStats>("/api/dashboard/learner"),
   trainerStats: () => request<TrainerStats>("/api/dashboard/trainer"),
   exportCsvUrl: () => `${API_URL}/api/dashboard/trainer/export.csv`,
-  grammar: (text: string, language = "fr") =>
+  grammar: (text: string, language = "auto") =>
     request<{ corrected_text: string; explanations: string[] }>("/api/languages/grammar", {
       method: "POST",
       body: JSON.stringify({ text, language }),
     }),
+  languagesStatus: () => request<{ whisper: boolean }>("/api/languages/status"),
   comprehension: (document_id: string, question_count = 3) =>
-    request<Record<string, unknown>>("/api/languages/comprehension", {
+    request<ComprehensionExercise>("/api/languages/comprehension", {
       method: "POST",
       body: JSON.stringify({ document_id, question_count }),
     }),
-  pronunciation: async (reference_text: string, audio?: File) => {
+  pronunciation: async (reference_text: string, audio?: File, spoken_text?: string) => {
     const form = new FormData();
     form.append("reference_text", reference_text);
     if (audio) form.append("audio", audio);
-    return request<Record<string, unknown>>("/api/languages/pronunciation", {
+    if (spoken_text) form.append("spoken_text", spoken_text);
+    return request<PronunciationResult>("/api/languages/pronunciation", {
       method: "POST",
       body: form,
     });
@@ -124,6 +222,41 @@ export type DocumentItem = {
   status: string;
   error_message?: string | null;
   created_at: string;
+};
+
+export type ComprehensionQuestion = {
+  id: string;
+  stem: string;
+  choices: string[];
+  correct_index: number;
+  explanation?: string;
+};
+
+export type ComprehensionExercise = {
+  passage: string;
+  questions: ComprehensionQuestion[];
+};
+
+export type PronunciationWord = {
+  word: string;
+  status: "match" | "missed" | "extra" | "replaced" | string;
+};
+
+export type PronunciationResult = {
+  transcript: string;
+  accuracy: number;
+  fluency: number;
+  matched_words: number;
+  total_words: number;
+  missed_words: string[];
+  extra_words: string[];
+  replaced_words: string[];
+  words: PronunciationWord[];
+  language: string;
+  feedback: string;
+  shadowing_text: string;
+  shadowing_tip: string;
+  engine: string;
 };
 
 export type Citation = {
@@ -164,12 +297,36 @@ export type AttemptItem = {
   created_at: string;
 };
 
+export type WeakTopicStat = {
+  topic: string;
+  count: number;
+  exercise_id?: string | null;
+  document_id?: string | null;
+};
+
+export type LearnerProgress = {
+  user_id: string;
+  full_name: string;
+  email: string;
+  attempts_count: number;
+  average_score: number | null;
+  last_attempt_at: string | null;
+  weak_topics: string[];
+};
+
+export type ScorePoint = {
+  date: string;
+  average_score: number | null;
+  attempts_count: number;
+};
+
 export type LearnerStats = {
   attempts_count: number;
   average_score: number | null;
   documents_available: number;
   weak_topics: string[];
   recent_attempts: AttemptItem[];
+  practice_topics?: WeakTopicStat[];
 };
 
 export type TrainerStats = {
@@ -178,6 +335,8 @@ export type TrainerStats = {
   indexed_documents: number;
   attempts_count: number;
   average_score: number | null;
-  recurrent_weak_topics: { topic: string; count: number }[];
+  recurrent_weak_topics: WeakTopicStat[];
   score_by_exercise_type: { exercise_type: string; average_score: number }[];
+  learners?: LearnerProgress[];
+  score_over_time?: ScorePoint[];
 };

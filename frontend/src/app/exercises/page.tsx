@@ -30,16 +30,42 @@ export default function ExercisesPage() {
   const [genDoc, setGenDoc] = useState("");
   const [genTopic, setGenTopic] = useState("");
   const [genCount, setGenCount] = useState(5);
+  const [focusTopic, setFocusTopic] = useState("");
 
   async function load() {
     const [ex, docs] = await Promise.all([api.exercises(), api.documents()]);
     setExercises(ex);
     setDocuments(docs.filter((d) => d.status === "indexed"));
     if (!genDoc && docs[0]) setGenDoc(docs.find((d) => d.status === "indexed")?.id || "");
+    return ex;
   }
 
   useEffect(() => {
-    load().catch((e) => setError(e.message));
+    load()
+      .then((list) => {
+        const query = new URLSearchParams(window.location.search);
+        const topic = query.get("topic") || "";
+        const exerciseId = query.get("exercise");
+        if (topic) {
+          setGenTopic(topic);
+          setFocusTopic(topic);
+        }
+        const byId = exerciseId ? list.find((item) => item.id === exerciseId) : undefined;
+        const byTopic = topic
+          ? list.find(
+              (item) =>
+                (item.topic || "").toLowerCase().includes(topic.toLowerCase()) ||
+                item.title.toLowerCase().includes(topic.toLowerCase())
+            )
+          : undefined;
+        const chosen = byId || byTopic;
+        if (chosen) {
+          setSelected(chosen);
+          setAnswers({});
+          setResult(null);
+        }
+      })
+      .catch((e) => setError(e.message));
   }, []);
 
   const questions: Question[] = useMemo(() => {
@@ -177,6 +203,13 @@ export default function ExercisesPage() {
       )}
 
       {error && <p className="text-[var(--danger)]">{error}</p>}
+
+      {focusTopic && (
+        <div className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-3 text-sm">
+          Retravailler le thème <strong>{focusTopic}</strong>. Le formulaire de génération est prérempli ;
+          un exercice existant est sélectionné s’il correspond.
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-[280px_1fr] gap-6">
         <ul className="space-y-2">
